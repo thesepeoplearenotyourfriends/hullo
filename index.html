@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#171923">
   <title>Hullo</title>
+  <link rel="canonical" href="https://thesepeoplearenotyourfriends.github.io/hullo/">
   <link rel="stylesheet" href="hullo.css">
   <script src="web_cockpit/vendor/eruda.js"></script>
 </head>
@@ -17,9 +18,8 @@
 
   <section id="landing" class="landing">
     <div class="welcome">
-      <h2>Start a conversation</h2>
-      <p>Create a one-time invitation and send the link to the person you want to talk with.</p>
-      <button id="create" class="primary" type="button">Create invitation</button>
+      <h2>Open an invitation</h2>
+      <p>Open the disposable protected link shared from a Bluephone conversation.</p>
       <output id="invite" class="invitation" aria-live="polite"></output>
     </div>
 
@@ -28,6 +28,7 @@
       <div class="tools-body">
         <label class="loopback"><input type="checkbox" id="loopback"> <span><strong>Same-device LOOPBACK TEST</strong><small>Lab use only. Keep this off for an ordinary conversation.</small></span></label>
         <button id="console" class="secondary" type="button" hidden>Open console</button>
+        <button id="create" class="secondary" type="button">Create unprotected transport test</button>
       </div>
     </details>
   </section>
@@ -59,6 +60,7 @@
 </dialog>
 <script src="vendor/eruda/eruda.js"></script>
 <script type="module" src="web_cockpit/peer-core.js"></script>
+<script src="episode-crypto.js"></script>
 <script type="module" src="browser-host.js"></script>
 </body>
 </html>
