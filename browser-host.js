@@ -3,6 +3,7 @@
   var state = document.getElementById("state"), chatState = document.getElementById("chat-state"), statusDot = document.getElementById("status-dot");
   var stages = document.getElementById("stages"), session = document.getElementById("session"), landing = document.getElementById("landing");
   var startup = document.getElementById("startup"), messages = document.getElementById("messages"), loopback = document.getElementById("loopback");
+  var protectedEpisode = null, protectedPromise = null, protectedReady = false, pendingPeer = "";
   var composer = document.getElementById("composer"), input = document.getElementById("payload"), empty = document.getElementById("empty");
   var labels = {
     invitation: "Invitation accepted", active: "Trystero admission complete — peer ACTIVE", replay: "Invitation already active", left: "Peer left", sent: "Application bytes sent",
@@ -21,15 +22,16 @@
     if (type === "error") label += " at " + (detail.stage || "unknown stage") + ": " + (detail.message || "bounded error");
     state.textContent = label;
     row(label, type === "error" || type === "relay" && (detail.state === "failed" || detail.state === "closed") ? "failed" : type === "relay" && detail.state === "connecting" ? "working" : "done");
-    if (type === "received" && detail.data) bubble(new TextDecoder().decode(BluephonePeerCore.fromBase64(detail.data)), false);
-    if (type === "active") { connection("Connected", "active"); startup.open = false; startup.classList.add("retired"); composer.hidden = false; input.focus(); }
+    if (type === "received" && detail.data) { if (!protectedEpisode) { log("error", {stage:"security",message:"invitation has no Handset key"}); return; } protectedEpisode.decrypt(BluephonePeerCore.fromBase64(detail.data)).then(function(packet){ if(packet.type===2&&packet.text==="ready"){protectedReady=true;connection("Connected","active");startup.open=false;startup.classList.add("retired");composer.hidden=false;input.focus();}else if(packet.type===3&&protectedReady)bubble(packet.text,false);else throw new Error("unexpected protected episode packet"); }).catch(function(){log("error",{stage:"security",message:"authentication failed"});}); }
+    if (type === "active") { pendingPeer=detail.peer||"";connection("Securing…", "connecting");if(!protectedPromise){log("error",{stage:"security",message:"Handset public key missing from invitation"});}else protectedPromise.then(function(value){protectedEpisode=value;BluephonePeerCore.send(BluephonePeerCore.toBase64(value.hello()),pendingPeer);},function(){log("error",{stage:"security",message:"invalid Handset episode key"});}); }
     if (type === "left") { connection("Disconnected", "disconnected"); composer.hidden = true; }
     if (type === "error") { connection("Couldn’t connect", "disconnected"); composer.hidden = true; startup.open = true; }
   }
   function testConfig(enabled) { return enabled ? {_test_only_mdnsHostFallbackToLoopback: true, rtcConfig: {iceServers: []}} : undefined; }
-  function start(value, useLoopback) {
+  function start(value, useLoopback, episode, handsetKey) {
     landing.hidden = true; session.hidden = false; connection("Connecting…", "connecting");
-    loopback.checked = Boolean(useLoopback);
+    loopback.checked = Boolean(useLoopback);protectedReady=false;composer.hidden=true;
+    protectedEpisode=null;protectedPromise=episode&&handsetKey?HulloEpisodeCrypto.create(episode,handsetKey):null;
     BluephonePeerCore.join(value, {event: log}, testConfig(useLoopback)).catch(function (error) { log("error", {stage: "join", message: String(error.message || error).slice(0,160)}); });
   }
   document.getElementById("create").onclick = function () {
@@ -44,11 +46,11 @@
     var gateway = document.createElement("a"); gateway.href = "bluephone-lab://peer#invite=" + value + flag; gateway.className = "gateway"; gateway.textContent = "Open Bluephone Lab Gateway";
     invite.appendChild(document.createElement("br")); invite.appendChild(gateway);
     startup.insertBefore(invite, stages);
-    start(value, loopback.checked);
+    start(value, loopback.checked, "", "");
   };
   composer.onsubmit = function (event) {
     event.preventDefault(); var value = input.value; if (!value.trim()) return;
-    BluephonePeerCore.send(BluephonePeerCore.toBase64(new TextEncoder().encode(value))); bubble(value, true); input.value = ""; input.style.height = ""; input.focus();
+    if(!protectedReady||!protectedEpisode)return;protectedEpisode.encrypt(value).then(function(packet){BluephonePeerCore.send(BluephonePeerCore.toBase64(packet),pendingPeer);bubble(value,true);},function(){log("error",{stage:"security",message:"encryption failed"});}); input.value = ""; input.style.height = ""; input.focus();
   };
   input.onkeydown = function (event) { if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); composer.requestSubmit(); } };
   input.oninput = function () { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 131) + "px"; };
@@ -59,5 +61,5 @@
   var consoleButton = document.getElementById("console");
   if (window.eruda) { consoleButton.hidden = false; consoleButton.onclick = function () { window.eruda.init(); consoleButton.hidden = true; }; }
   var params = new URLSearchParams(location.hash.slice(1)), invitation = params.get("invite");
-  if (invitation && /^[A-Za-z0-9_-]{43,}$/.test(invitation)) start(invitation, params.get("loopback") === "1");
+  if (invitation && /^[A-Za-z0-9_-]{43,}$/.test(invitation)) start(invitation, params.get("loopback") === "1", params.get("episode"), params.get("handset"));
 }());
