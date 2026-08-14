@@ -1,17 +1,63 @@
 <!doctype html>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Hullo</title><link rel="stylesheet" href="hullo.css">
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#171923">
+  <title>Hullo</title>
+  <link rel="stylesheet" href="hullo.css">
+</head>
+<body>
 <main>
-  <header><h1>Hullo</h1><button id="console" class="quiet" disabled title="Local Eruda is not present in this checkout">Console</button></header>
-  <section id="landing">
-    <p>An ephemeral, two-peer demonstration. Nothing here becomes a browser identity or conversation history.</p>
-    <label class="loopback"><input type="checkbox" id="loopback"> Same-device LOOPBACK TEST</label>
-    <button id="create">Create invitation</button><output id="invite"></output>
+  <header class="topbar">
+    <h1>Hullo</h1>
+    <button id="about" class="icon-button" type="button" aria-label="About">?</button>
+  </header>
+
+  <section id="landing" class="landing">
+    <div class="welcome">
+      <h2>Start a conversation</h2>
+      <p>Create a one-time invitation and send the link to the person you want to talk with.</p>
+      <button id="create" class="primary" type="button">Create invitation</button>
+      <output id="invite" class="invitation" aria-live="polite"></output>
+    </div>
+
+    <details class="tools">
+      <summary>Connection &amp; test tools</summary>
+      <div class="tools-body">
+        <label class="loopback"><input type="checkbox" id="loopback"> <span><strong>Same-device LOOPBACK TEST</strong><small>Lab use only. Keep this off for an ordinary conversation.</small></span></label>
+        <button id="console" class="secondary" type="button" hidden>Open console</button>
+      </div>
+    </details>
   </section>
-  <section hidden id="session">
-    <details id="startup" open><summary><span id="state">invitation accepted</span></summary><ol id="stages" aria-live="polite"></ol></details>
-    <div id="messages" aria-live="polite"></div>
-    <form id="composer"><textarea id="payload" placeholder="Message" aria-label="Message"></textarea><button id="send" type="submit">Send</button></form>
+
+  <section hidden id="session" class="session">
+    <div class="connection-bar">
+      <span id="status-dot" class="status-dot connecting" aria-hidden="true"></span>
+      <span id="chat-state">Connecting…</span>
+    </div>
+    <details id="startup" class="startup" open>
+      <summary><span aria-hidden="true" class="chevron">›</span><span id="state">Invitation accepted</span></summary>
+      <ol id="stages" aria-live="polite"></ol>
+    </details>
+    <div id="messages" class="messages" aria-live="polite" aria-label="Conversation">
+      <p id="empty" class="empty">Once connected, messages will appear here.</p>
+    </div>
+    <form id="composer" class="composer" hidden>
+      <textarea id="payload" rows="1" maxlength="12000" placeholder="Message" aria-label="Message"></textarea>
+      <button id="send" class="send" type="submit" aria-label="Send message">Send</button>
+    </form>
   </section>
 </main>
-<script type="module" src="web_cockpit/peer-core.js"></script><script type="module" src="browser-host.js"></script>
+
+<dialog id="about-dialog" aria-labelledby="about-title">
+  <div class="dialog-head"><h2 id="about-title">About</h2><button id="close-about" class="icon-button" type="button" aria-label="Close">×</button></div>
+  <p>This page creates a temporary conversation, not an account, contact, or message history.</p>
+  <p>Temporary rendezvous servers help the two browsers find each other. Messages use the established peer connection when possible.</p>
+  <p>Closing this page ends this browser’s conversation episode. A connection can fail when the networks cannot establish a usable peer path.</p>
+</dialog>
+<script src="vendor/eruda/eruda.js"></script>
+<script type="module" src="web_cockpit/peer-core.js"></script>
+<script type="module" src="browser-host.js"></script>
+</body>
+</html>
