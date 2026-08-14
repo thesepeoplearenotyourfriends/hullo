@@ -1,5 +1,11 @@
 (function () {
   "use strict";
+  window.BluephonePeerWebRtcConfig = {
+  _test_only_mdnsHostFallbackToLoopback: true,
+  rtcConfig: {
+    iceServers: []
+  }
+};
   var state = document.getElementById("state"), events = document.getElementById("events"), session = document.getElementById("session");
   function secret() { var b = new Uint8Array(32); crypto.getRandomValues(b); return BluephonePeerCore.toBase64(b).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""); }
   function log(type, detail) { events.textContent = (type + " " + JSON.stringify(detail) + "\n" + events.textContent).slice(0, 4000); state.textContent = type; }
