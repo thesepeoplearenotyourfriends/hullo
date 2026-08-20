@@ -11,7 +11,7 @@
   var remoteAudio = document.getElementById("remote-audio"), incomingCall = document.getElementById("incoming-call");
   var acceptCall = document.getElementById("accept-call"), declineCall = document.getElementById("decline-call");
   var protectedEpisode = null, protectedPromise = null, protectedReady = false, pendingPeer = "", labMode = false;
-  var currentCall = null, mediaWorker = null, statsTimer = null, lastStats = null;
+  var currentCall = null, mediaWorker = null, statsTimer = null, lastStats = null, receiveChain = Promise.resolve();
   var incomingFiles = Object.create(null), objectUrls = [];
   var MAX_FILE_BYTES = 16 * 1024 * 1024, FILE_CHUNK_BYTES = 48 * 1024;
   var labels = {
@@ -29,10 +29,11 @@
   function bubble(text, mine) { var item = document.createElement("p"); clearEmpty(); item.className = "bubble " + (mine ? "mine" : "theirs"); item.textContent = text; messages.appendChild(item); messages.scrollTop = messages.scrollHeight; return item; }
   function transferBubble(text, mine) { var item = document.createElement("div"); clearEmpty(); item.className = "bubble attachment " + (mine ? "mine" : "theirs"); item.textContent = text; messages.appendChild(item); messages.scrollTop = messages.scrollHeight; return item; }
   function formatBytes(value) { if (value < 1024) return value + " B"; if (value < 1024 * 1024) return (value / 1024).toFixed(value < 10 * 1024 ? 1 : 0) + " KB"; return (value / (1024 * 1024)).toFixed(1) + " MB"; }
+  function previewableImage(mime) { return /^(?:image\/(?:png|jpeg|webp|gif|avif))$/i.test(mime || ""); }
   function attachmentBubble(name, mime, size, url, mine, existing) {
     var item = existing || transferBubble("", mine), image, link, meta;
     item.textContent = "";
-    if (mime && mime.indexOf("image/") === 0) {
+    if (previewableImage(mime)) {
       image = document.createElement("img"); image.className = "attachment-preview"; image.src = url; image.alt = name; item.appendChild(image);
     }
     link = document.createElement("a"); link.href = url; link.download = name || "Hullo file"; link.textContent = "📎 " + (name || "File"); item.appendChild(link);
@@ -114,7 +115,9 @@
     detail = detail || {};
     log(type, detail);
     if (type === "received" && detail.data) {
-      handleProtectedReceived(detail).catch(function (error) { log("error", {stage: "security", message: String(error.message || error).slice(0, 160)}); });
+      receiveChain = receiveChain.then(function () { return handleProtectedReceived(detail); }).catch(function (error) {
+        log("error", {stage: "security", message: String(error.message || error).slice(0, 160)});
+      });
       return;
     }
     if (type === "active") {
@@ -153,6 +156,9 @@
     composer.hidden = true;
     sessionActions.hidden = true;
     protectedEpisode = null;
+    receiveChain = Promise.resolve();
+    Object.keys(incomingFiles).forEach(function (id) { if (incomingFiles[id].timer) clearTimeout(incomingFiles[id].timer); });
+    incomingFiles = Object.create(null);
     cleanupCall();
     protectedPromise = labMode ? HulloEpisodeCrypto.createLab(value) : episode && handsetKey ? HulloEpisodeCrypto.create(episode, handsetKey) : null;
     BluephonePeerCore.join(value, {event: coreEvent}, testConfig(useLoopback)).catch(function (error) { log("error", {stage: "join", message: String(error.message || error).slice(0, 160)}); });
@@ -204,7 +210,7 @@
   function scheduleCallTimeout(call) {
     call.timer = setTimeout(function () {
       if (currentCall !== call || call.state !== "ringing") return;
-      sendControl({type: call.direction === "outgoing" ? "call-cancel" : "call-decline", callId: call.id, reason: "timeout"}).catch(function () {});
+      sendControl({v: 1, type: call.direction === "outgoing" ? "call-cancel" : "call-decline", callId: call.id, reason: "timeout"}).catch(function () {});
       cleanupCall();
     }, 45000);
   }
@@ -219,7 +225,7 @@
     showCallPanel("Calling…");
     scheduleCallTimeout(call);
     try {
-      await sendControl({type: "call-offer", callId: call.id, media: ["audio"]});
+      await sendControl({v: 1, type: "call-offer", callId: call.id, media: ["audio"]});
     } catch (error) {
       failCall("Couldn’t place call", error);
     }
@@ -240,7 +246,7 @@
     call.state = "connecting";
     showCallPanel("Connecting…");
     try {
-      await sendControl({type: "call-accept", callId: call.id, media: ["audio"]});
+      await sendControl({v: 1, type: "call-accept", callId: call.id, media: ["audio"]});
       await beginMedia(call);
     } catch (error) {
       failCall("Couldn’t start call", error);
@@ -252,7 +258,7 @@
     if (!call || call.direction !== "incoming" || call.state !== "ringing") return;
     clearCallTimer(call);
     incomingCall.close();
-    await sendControl({type: "call-decline", callId: call.id}).catch(function () {});
+    await sendControl({v: 1, type: "call-decline", callId: call.id}).catch(function () {});
     cleanupCall();
   }
 
@@ -260,20 +266,20 @@
     var incoming;
     if (!validCallId(control.callId) || !Array.isArray(control.media) || control.media.indexOf("audio") < 0) return;
     if (!mediaCryptoSupported()) {
-      await sendControl({type: "call-decline", callId: control.callId, reason: "media-encryption-unsupported"}).catch(function () {});
+      await sendControl({v: 1, type: "call-decline", callId: control.callId, reason: "media-encryption-unsupported"}).catch(function () {});
       return;
     }
     if (currentCall && currentCall.id === control.callId) return;
     if (currentCall && currentCall.state === "ringing" && currentCall.direction === "outgoing") {
       if (control.callId < currentCall.id) {
-        await sendControl({type: "call-cancel", callId: currentCall.id, reason: "crossed-call"}).catch(function () {});
+        await sendControl({v: 1, type: "call-cancel", callId: currentCall.id, reason: "crossed-call"}).catch(function () {});
         cleanupCall();
       } else {
-        await sendControl({type: "call-decline", callId: control.callId, reason: "crossed-call"}).catch(function () {});
+        await sendControl({v: 1, type: "call-decline", callId: control.callId, reason: "crossed-call"}).catch(function () {});
         return;
       }
     } else if (currentCall) {
-      await sendControl({type: "call-decline", callId: control.callId, reason: "busy"}).catch(function () {});
+      await sendControl({v: 1, type: "call-decline", callId: control.callId, reason: "busy"}).catch(function () {});
       return;
     }
     incoming = {id: control.callId, direction: "incoming", state: "ringing", media: "audio", timer: null, mediaKeys: null, localStream: null, localTrack: null};
@@ -282,6 +288,7 @@
 
   async function handleCallControl(control) {
     var call = currentCall;
+    if (control.v !== 1) return;
     if (control.type === "call-offer") { await handleCallOffer(control); return; }
     if (!call || !validCallId(control.callId) || control.callId !== call.id) return;
     if (control.type === "call-accept" && call.direction === "outgoing" && call.state === "ringing") {
@@ -361,12 +368,16 @@
 
   function stopStats() { if (statsTimer) clearInterval(statsTimer); statsTimer = null; lastStats = null; callRate.textContent = ""; }
   async function updateStats() {
-    var pc, report, pair = null, now = performance.now(), tx, rx, seconds;
+    var pc, report, pair = null, selectedPairId = "", now = performance.now(), tx, rx, seconds;
     if (!currentCall) return;
     pc = BluephonePeerCore.getPeerConnection(pendingPeer);
     if (!pc) return;
     try { report = await pc.getStats(); } catch (_) { return; }
-    report.forEach(function (item) { if (item.type === "candidate-pair" && item.state === "succeeded" && item.nominated) pair = item; });
+    report.forEach(function (item) {
+      if (item.type === "transport" && item.selectedCandidatePairId) selectedPairId = item.selectedCandidatePairId;
+      if (!pair && item.type === "candidate-pair" && item.state === "succeeded" && item.nominated) pair = item;
+    });
+    if (selectedPairId && report.get(selectedPairId)) pair = report.get(selectedPairId);
     if (!pair || typeof pair.bytesSent !== "number" || typeof pair.bytesReceived !== "number") return;
     if (lastStats) {
       seconds = (now - lastStats.time) / 1000;
@@ -396,35 +407,49 @@
   function failCall(label, error) {
     var call = currentCall;
     log("error", {stage: "call", message: String(error && error.message || error || label).slice(0, 160)});
-    if (call && protectedReady) sendControl({type: "call-error", callId: call.id, reason: label}).catch(function () {});
+    if (call && protectedReady) sendControl({v: 1, type: "call-error", callId: call.id, reason: label}).catch(function () {});
     cleanupCall();
   }
 
   async function endCall() {
     var call = currentCall;
     if (!call) return;
-    await sendControl({type: call.state === "ringing" && call.direction === "outgoing" ? "call-cancel" : "call-hangup", callId: call.id}).catch(function () {});
+    await sendControl({v: 1, type: call.state === "ringing" && call.direction === "outgoing" ? "call-cancel" : "call-hangup", callId: call.id}).catch(function () {});
     cleanupCall();
   }
 
   voiceCall.onclick = startOutgoingCall;
   acceptCall.onclick = acceptIncomingCall;
   declineCall.onclick = declineIncomingCall;
+  incomingCall.oncancel = function (event) { event.preventDefault(); declineIncomingCall(); };
   hangup.onclick = endCall;
   resumeAudio.onclick = function () { remoteAudio.play().then(function () { resumeAudio.hidden = true; callStatus.textContent = "Voice call"; }, function () {}); };
 
   function validFileControl(control) {
-    return typeof control.id === "string" && /^[A-Za-z0-9_-]{22}$/.test(control.id) && typeof control.name === "string" && control.name.length > 0 && control.name.length <= 180 &&
+    return control.v === 1 && typeof control.id === "string" && /^[A-Za-z0-9_-]{22}$/.test(control.id) && typeof control.name === "string" && control.name.length > 0 && control.name.length <= 180 &&
       typeof control.mime === "string" && control.mime.length <= 120 && Number.isInteger(control.size) && control.size >= 0 && control.size <= MAX_FILE_BYTES &&
       Number.isInteger(control.chunks) && control.chunks >= 1 && control.chunks <= Math.ceil(MAX_FILE_BYTES / FILE_CHUNK_BYTES) + 1 && typeof control.sha256 === "string" && /^[A-Za-z0-9_-]{43}$/.test(control.sha256);
   }
 
   async function handleFileOffer(control) {
-    if (!validFileControl(control) || incomingFiles[control.id]) return;
-    incomingFiles[control.id] = {
+    var transfer;
+    if (!validFileControl(control) || incomingFiles[control.id] || Object.keys(incomingFiles).length >= 4) return;
+    transfer = {
       id: control.id, name: control.name, mime: control.mime || "application/octet-stream", size: control.size, chunks: control.chunks, sha256: control.sha256,
-      parts: new Array(control.chunks), received: 0, bytes: 0, bubble: transferBubble("Receiving 📎 " + control.name + "…", false)
+      parts: new Array(control.chunks), received: 0, bytes: 0, bubble: transferBubble("Receiving 📎 " + control.name + "…", false), timer: null
     };
+    transfer.timer = setTimeout(function () {
+      if (incomingFiles[control.id] !== transfer) return;
+      transfer.bubble.textContent = "Transfer interrupted: " + transfer.name;
+      delete incomingFiles[control.id];
+    }, 120000);
+    incomingFiles[control.id] = transfer;
+  }
+
+  function failIncomingFile(transfer, message) {
+    clearTimeout(transfer.timer);
+    transfer.bubble.textContent = message;
+    delete incomingFiles[transfer.id];
   }
 
   function encodeFileChunk(id, index, bytes) {
@@ -441,15 +466,16 @@
     transfer = incomingFiles[id];
     if (!transfer || index >= transfer.chunks || transfer.parts[index]) return;
     part = bytes.slice(20);
-    if (transfer.bytes + part.length > transfer.size) throw new Error("file transfer exceeded declared size");
+    if (transfer.bytes + part.length > transfer.size) { failIncomingFile(transfer, "File transfer exceeded its declared size: " + transfer.name); throw new Error("file transfer exceeded declared size"); }
     transfer.parts[index] = part; transfer.received += 1; transfer.bytes += part.length;
     transfer.bubble.textContent = "Receiving 📎 " + transfer.name + " — " + Math.floor(transfer.received / transfer.chunks * 100) + "%";
     if (transfer.received !== transfer.chunks) return;
-    if (transfer.bytes !== transfer.size) throw new Error("file transfer size mismatch");
+    if (transfer.bytes !== transfer.size) { failIncomingFile(transfer, "File transfer size mismatch: " + transfer.name); throw new Error("file transfer size mismatch"); }
     full = new Uint8Array(transfer.size); offset = 0;
     transfer.parts.forEach(function (chunk) { full.set(chunk, offset); offset += chunk.length; });
     digest = toUrl64(new Uint8Array(await crypto.subtle.digest("SHA-256", full)));
-    if (digest !== transfer.sha256) { transfer.bubble.textContent = "File authentication failed: " + transfer.name; delete incomingFiles[id]; return; }
+    if (digest !== transfer.sha256) { failIncomingFile(transfer, "File authentication failed: " + transfer.name); return; }
+    clearTimeout(transfer.timer);
     url = URL.createObjectURL(new Blob([full], {type: transfer.mime})); objectUrls.push(url);
     attachmentBubble(transfer.name, transfer.mime, transfer.size, url, false, transfer.bubble);
     delete incomingFiles[id];
@@ -465,7 +491,7 @@
       digest = toUrl64(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)));
       chunks = Math.max(1, Math.ceil(bytes.length / FILE_CHUNK_BYTES));
       item = transferBubble("Sending 📎 " + (file.name || "File") + "…", true);
-      await sendControl({type: "file-offer", id: id, name: (file.name || "File").slice(0, 180), mime: (file.type || "application/octet-stream").slice(0, 120), size: bytes.length, chunks: chunks, sha256: digest});
+      await sendControl({v: 1, type: "file-offer", id: id, name: (file.name || "File").slice(0, 180), mime: (file.type || "application/octet-stream").slice(0, 120), size: bytes.length, chunks: chunks, sha256: digest});
       for (i = 0; i < chunks; i += 1) {
         startAt = i * FILE_CHUNK_BYTES; part = bytes.slice(startAt, Math.min(bytes.length, startAt + FILE_CHUNK_BYTES));
         packet = await protectedEpisode.encryptBinary(encodeFileChunk(id, i, part));
