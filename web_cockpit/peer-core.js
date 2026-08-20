@@ -21,6 +21,9 @@ import {joinRoom} from "./vendor/trystero/nostr/index.mjs";
     });
     room.onPeerJoin = function (peerId) { emit("active", {peer: peerId}); };
     room.onPeerLeave = function (peerId) { emit("left", {peer: peerId}); };
+    room.onPeerTrack = function (track, stream, peerId, metadata) {
+      emit("track", {peer: peerId, track: track, stream: stream, metadata: metadata});
+    };
     var action = room.makeAction("bp-opaque-v1");
     sendOpaque = action.send;
     action.onMessage = function (bytes, context) {
@@ -37,12 +40,38 @@ import {joinRoom} from "./vendor/trystero/nostr/index.mjs";
   }
 
   function send(base64, peerId) {
-    if (!sendOpaque) throw new Error("room is not joined");
-    var bytes = fromBase64(base64);
-    sendOpaque(bytes, {target: peerId || null}).catch(function (error) {
+    var bytes;
+    if (!sendOpaque) return Promise.reject(new Error("room is not joined"));
+    bytes = fromBase64(base64);
+    return sendOpaque(bytes, {target: peerId || null}).then(function () {
+      emit("sent", {bytes: bytes.byteLength});
+    }, function (error) {
       emit("error", {message: String(error && error.message || error).slice(0, 160)});
+      throw error;
     });
-    emit("sent", {bytes: bytes.byteLength});
+  }
+
+  function getPeerConnection(peerId) {
+    var peers;
+    if (!room) return null;
+    peers = room.getPeers();
+    return peers[peerId] || null;
+  }
+
+  async function addTrack(track, stream, peerId, metadata) {
+    var pc, sender;
+    if (!room) throw new Error("room is not joined");
+    await Promise.all(room.addTrack(track, stream, {target: peerId || null, metadata: metadata}));
+    pc = getPeerConnection(peerId);
+    if (!pc) throw new Error("peer connection is not active");
+    sender = pc.getSenders().find(function (item) { return item.track === track; });
+    if (!sender) throw new Error("media sender was not created");
+    return sender;
+  }
+
+  function removeTrack(track, peerId) {
+    if (!room) return;
+    room.removeTrack(track, {target: peerId || null});
   }
 
   function fromBase64(value) {
@@ -57,5 +86,14 @@ import {joinRoom} from "./vendor/trystero/nostr/index.mjs";
     return btoa(raw);
   }
 
-  root.BluephonePeerCore = {join: join, leave: leave, send: send, fromBase64: fromBase64, toBase64: toBase64};
+  root.BluephonePeerCore = {
+    join: join,
+    leave: leave,
+    send: send,
+    addTrack: addTrack,
+    removeTrack: removeTrack,
+    getPeerConnection: getPeerConnection,
+    fromBase64: fromBase64,
+    toBase64: toBase64
+  };
 }(window));
