@@ -29,19 +29,29 @@
         <label class="loopback"><input type="checkbox" id="loopback"> <span><strong>Same-device LOOPBACK TEST</strong><small>Lab use only. Keep this off for an ordinary conversation.</small></span></label>
         <button id="console" class="secondary" type="button" hidden>Open console</button>
         <button id="create" class="secondary" type="button">Create unprotected transport test</button>
+        <button id="create-lab" class="secondary" type="button">Create protected browser test</button>
       </div>
     </details>
   </section>
 
   <section hidden id="session" class="session">
     <div class="connection-bar">
-      <span id="status-dot" class="status-dot connecting" aria-hidden="true"></span>
-      <span id="chat-state">Connecting…</span>
+      <span class="connection-state"><span id="status-dot" class="status-dot connecting" aria-hidden="true"></span><span id="chat-state">Connecting…</span></span>
+      <span id="session-actions" class="session-actions" hidden>
+        <button id="voice-call" class="conversation-button" type="button" aria-label="Voice call" title="Voice call">🕽</button>
+        <button id="attach" class="conversation-button" type="button" aria-label="Send file" title="Send file">📎</button>
+      </span>
+      <input id="file-input" type="file" hidden>
     </div>
     <details id="startup" class="startup" open>
       <summary><span aria-hidden="true" class="chevron">›</span><span id="state">Invitation accepted</span></summary>
       <ol id="stages" aria-live="polite"></ol>
     </details>
+    <section id="call-panel" class="call-panel" hidden aria-live="polite">
+      <span><strong id="call-status">Voice call</strong><small id="call-rate"></small></span>
+      <span class="call-actions"><button id="resume-audio" class="secondary compact" type="button" hidden>Hear call</button><button id="hangup" class="hangup" type="button">Hang up</button></span>
+      <audio id="remote-audio" autoplay></audio>
+    </section>
     <div id="messages" class="messages" aria-live="polite" aria-label="Conversation">
       <p id="empty" class="empty">Once connected, messages will appear here.</p>
     </div>
@@ -52,10 +62,16 @@
   </section>
 </main>
 
+<dialog id="incoming-call" aria-labelledby="incoming-call-label">
+  <div class="dialog-head"><h2 id="incoming-call-label">Incoming voice call</h2></div>
+  <div class="dialog-actions"><button id="decline-call" class="secondary" type="button">Decline</button><button id="accept-call" class="primary" type="button">Answer</button></div>
+</dialog>
+
 <dialog id="about-dialog" aria-labelledby="about-title">
   <div class="dialog-head"><h2 id="about-title">About</h2><button id="close-about" class="icon-button" type="button" aria-label="Close">×</button></div>
   <p>This page creates a temporary conversation, not an account, contact, or message history.</p>
-  <p>Temporary rendezvous servers help the two browsers find each other. Messages use the established peer connection when possible.</p>
+  <p>Temporary rendezvous servers help the two peers find each other. Messages and file contents are protected inside the established peer connection.</p>
+  <p>Voice calls use WebRTC for realtime media transport while Hullo adds its own encryption to encoded call media before WebRTC transports it.</p>
   <p>Closing this page ends this browser’s conversation episode. A connection can fail when the networks cannot establish a usable peer path.</p>
 </dialog>
 <script type="module" src="web_cockpit/peer-core.js"></script>
